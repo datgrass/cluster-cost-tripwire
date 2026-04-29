@@ -63,12 +63,16 @@ _ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
 WORKSPACE_ID = int(_ctx.workspaceId().get())
 
 # `browserHostName` is what users actually click — important on PrivateLink / front-end-VPC
-# workspaces where the API host and browser host differ. Fall back to apiUrl if unavailable.
+# workspaces where the API host and browser host differ. Only populated in interactive
+# notebook context though; in job task context the underlying Scala Option is None and
+# calling `.get()` throws NoSuchElementException via Py4J. Fall back to apiUrl on failure.
 from urllib.parse import urlparse
-WORKSPACE_HOST = (
-    _ctx.browserHostName().get()
-    or urlparse(_ctx.apiUrl().get()).netloc
-)
+try:
+    WORKSPACE_HOST = _ctx.browserHostName().get()
+except Exception:
+    WORKSPACE_HOST = None
+if not WORKSPACE_HOST:
+    WORKSPACE_HOST = urlparse(_ctx.apiUrl().get()).netloc
 
 print(
     f"workspace_id={WORKSPACE_ID}, host={WORKSPACE_HOST}, mode={ROUTING_MODE}, "
