@@ -1,0 +1,9 @@
+.databricks/
+.DS_Store
+*.pyc
+__pycache__/
+
+# Tracked initially with sanitized examples. When a customer adds real cluster
+# IDs / patterns / creators here, run `git rm --cached config/excluded_clusters.py`
+# so future edits stop being committed and the file stays local-only.
+config/excluded_clusters.py

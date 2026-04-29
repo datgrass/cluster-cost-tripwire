@@ -1,0 +1,75 @@
+bundle:
+  name: cluster-cost-tripwire
+
+# ---------------------------------------------------------------------------
+# First deploy to a new workspace? See README.md "Deploying to a new workspace".
+# Minimum you'll likely want to review before `databricks bundle deploy`:
+#   - `catalog` + `schema`   -> where tables land
+#   - `budget_daily_dollars` -> absolute $/day per cluster alert threshold
+#   - `notifications_email`  -> if you want job-failure emails
+# Host is picked up from your CLI profile; no workspace URL is hardcoded.
+# ---------------------------------------------------------------------------
+
+variables:
+  catalog:
+    description: UC catalog for all tables written by this bundle.
+    default: main
+  schema:
+    description: UC schema (created if missing).
+    default: cluster_early_warning
+  budget_daily_dollars:
+    description: Absolute backstop — cluster projected > this flips to CRITICAL regardless of z-score.
+    default: "5000"
+  z_warning:
+    description: Z-score threshold for WARNING tier.
+    default: "2.0"
+  z_critical:
+    description: Z-score threshold for CRITICAL tier.
+    default: "3.0"
+  baseline_lookback_days:
+    description: Days of system.billing.usage history used for the workspace baseline distribution.
+    default: "30"
+  notifications_email:
+    description: Email to CC on job failures. Leave empty to disable.
+    default: ""
+
+  # ---- Slack alert routing (03_slack_alerting) ----
+  slack_secret_scope:
+    description: Databricks secret scope holding the Slack bot token.
+    default: databricks-cost-alerts
+  slack_secret_key:
+    description: Key inside `slack_secret_scope` holding the bot token (xoxb-...).
+    default: slack-bot-token
+  slack_routing_mode:
+    description: |
+      `channel_only` posts every alert to `slack_alert_channel`
+      (recommended during testing).
+      `dm_with_fallback` DMs each cluster owner via users.lookupByEmail and
+      falls back to `slack_alert_channel` when the email isn't in Slack.
+    default: channel_only
+  slack_alert_channel:
+    description: |
+      Channel name (`#name`) or ID (`C0...`). Primary destination in
+      `channel_only` mode; fallback in `dm_with_fallback` mode. Bot must be
+      a member unless it has `chat:write.public`. No default — must be set.
+    default: ""
+  warning_suppression_hours:
+    description: Hours to suppress repeat WARNING messages for the same cluster.
+    default: "24"
+  critical_suppression_hours:
+    description: Hours to suppress repeat CRITICAL messages for the same cluster.
+    default: "4"
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # Workspace host + root_path are inferred from your CLI profile and current user.
+    # Override by adding a `workspace:` block here if you want a specific location.
+  prod:
+    mode: production
+    # Add a `workspace:` block here when you're ready to deploy with production semantics
+    # (resource locking, no dev-user prefixes, etc.)

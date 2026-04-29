@@ -1,0 +1,133 @@
+resources:
+  jobs:
+    baseline_refresh:
+      name: cluster-cost-tripwire | baseline_refresh
+      schedule:
+        quartz_cron_expression: "0 0 2 * * ?"
+        timezone_id: America/Los_Angeles
+        pause_status: UNPAUSED  # flip to PAUSED to mute
+      # YAML anchor `main_cluster` defined here, reused across the other jobs via `*main_cluster`.
+      # Mirrors a single-node r5d.2xlarge Photon cluster with spot-with-fallback + user-isolation.
+      job_clusters:
+        - job_cluster_key: main
+          new_cluster: &main_cluster
+            spark_version: "17.3.x-scala2.13"
+            node_type_id: r5d.2xlarge
+            driver_node_type_id: r5d.2xlarge
+            num_workers: 0
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*, 4]"
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              first_on_demand: 1
+              spot_bid_price_percent: 100
+              zone_id: auto
+            data_security_mode: USER_ISOLATION
+            runtime_engine: PHOTON
+            custom_tags:
+              ResourceClass: SingleNode
+      tasks:
+        - task_key: baseline_refresh
+          job_cluster_key: main
+          notebook_task:
+            notebook_path: ../src/00_baseline_refresh.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              baseline_lookback_days: ${var.baseline_lookback_days}
+      # email_notifications disabled during testing phase. Re-enable before prod:
+      # email_notifications:
+      #   on_failure:
+      #     - ${var.notifications_email}
+
+    monitor:
+      name: cluster-cost-tripwire | monitor
+      schedule:
+        quartz_cron_expression: "0 0/15 * * * ?"
+        timezone_id: America/Los_Angeles
+        pause_status: UNPAUSED  # flip to PAUSED to mute
+      job_clusters:
+        - job_cluster_key: main
+          new_cluster: *main_cluster
+      tasks:
+        - task_key: monitor
+          job_cluster_key: main
+          notebook_task:
+            notebook_path: ../src/01_monitor.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              budget_daily_dollars: ${var.budget_daily_dollars}
+              z_warning: ${var.z_warning}
+              z_critical: ${var.z_critical}
+      # email_notifications disabled during testing phase. Re-enable before prod:
+      # email_notifications:
+      #   on_failure:
+      #     - ${var.notifications_email}
+
+    route_alerts:
+      name: cluster-cost-tripwire | route_alerts
+      schedule:
+        # Every 30 minutes. Pairs with 15-min monitor cadence: worst-case
+        # detection-to-message latency is ~30 min. Re-nudge cadence is governed
+        # by per-(cluster, severity) suppression in 03, not this schedule.
+        quartz_cron_expression: "0 0,30 * * * ?"
+        timezone_id: America/Los_Angeles
+        pause_status: PAUSED  # unpause once 03 has been validated end-to-end
+      job_clusters:
+        - job_cluster_key: main
+          new_cluster: *main_cluster
+      tasks:
+        - task_key: route_alerts
+          job_cluster_key: main
+          notebook_task:
+            notebook_path: ../src/03_slack_alerting.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              secret_scope: ${var.slack_secret_scope}
+              secret_key: ${var.slack_secret_key}
+              routing_mode: ${var.slack_routing_mode}
+              alert_channel: ${var.slack_alert_channel}
+              warning_suppression_hours: ${var.warning_suppression_hours}
+              critical_suppression_hours: ${var.critical_suppression_hours}
+      # email_notifications disabled during testing phase. Re-enable before prod:
+      # email_notifications:
+      #   on_failure:
+      #     - ${var.notifications_email}
+
+    backtest:
+      name: cluster-cost-tripwire | backtest
+      job_clusters:
+        - job_cluster_key: main
+          new_cluster: *main_cluster
+      tasks:
+        - task_key: backtest
+          job_cluster_key: main
+          notebook_task:
+            notebook_path: ../src/02_backtest.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              budget_daily_dollars: ${var.budget_daily_dollars}
+              z_warning: ${var.z_warning}
+              z_critical: ${var.z_critical}
+              backtest_lookback_days: "90"
+              baseline_lookback_days: ${var.baseline_lookback_days}
+
+    teardown:
+      name: cluster-cost-tripwire | teardown (DESTRUCTIVE)
+      job_clusters:
+        - job_cluster_key: main
+          new_cluster: *main_cluster
+      tasks:
+        - task_key: teardown
+          job_cluster_key: main
+          notebook_task:
+            notebook_path: ../src/99_teardown.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              # Leave `confirm` blank so accidental triggers no-op; set to "YES" at run time to fire.
+              confirm: ""
