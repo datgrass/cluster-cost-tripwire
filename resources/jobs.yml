@@ -92,6 +92,7 @@ resources:
               alert_channel: ${var.slack_alert_channel}
               warning_suppression_hours: ${var.warning_suppression_hours}
               critical_suppression_hours: ${var.critical_suppression_hours}
+              workspace_host: ${var.slack_workspace_host}
       # email_notifications disabled during testing phase. Re-enable before prod:
       # email_notifications:
       #   on_failure:

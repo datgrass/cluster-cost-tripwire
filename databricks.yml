@@ -59,6 +59,13 @@ variables:
   critical_suppression_hours:
     description: Hours to suppress repeat CRITICAL messages for the same cluster.
     default: "4"
+  slack_workspace_host:
+    description: |
+      Workspace host (e.g. `mycompany.cloud.databricks.com`) used to build
+      cluster deep-link URLs in Slack alerts. Leave empty to auto-detect from
+      the runtime context — set explicitly when auto-detection is wrong
+      (PrivateLink, custom domains) or when you want a specific host.
+    default: ""
 
 include:
   - resources/*.yml

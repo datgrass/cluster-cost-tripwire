@@ -23,6 +23,7 @@
 # MAGIC | `alert_channel` | *(empty — must be set)* | Channel name (`#name`) or ID (`C0...`). Primary destination in `channel_only` mode; fallback in `dm_with_fallback` mode. Bot must be invited unless it has `chat:write.public`. |
 # MAGIC | `warning_suppression_hours` | `24` | Hours to suppress repeat WARNING messages for the same cluster. |
 # MAGIC | `critical_suppression_hours` | `4` | Hours to suppress repeat CRITICAL messages for the same cluster. |
+# MAGIC | `workspace_host` | *(empty — auto-detect)* | Workspace host (e.g. `mycompany.cloud.databricks.com`) used to build cluster deep-link URLs. Leave empty to auto-detect from runtime context; set explicitly when auto-detection is wrong (PrivateLink, custom domains) or when you want a specific host. |
 # MAGIC
 # MAGIC ## Required bot scopes
 # MAGIC
@@ -38,15 +39,17 @@ dbutils.widgets.dropdown("routing_mode", "channel_only", ["channel_only", "dm_wi
 dbutils.widgets.text("alert_channel", "")
 dbutils.widgets.text("warning_suppression_hours", "24")
 dbutils.widgets.text("critical_suppression_hours", "4")
+dbutils.widgets.text("workspace_host", "")
 
-CATALOG       = dbutils.widgets.get("catalog")
-SCHEMA        = dbutils.widgets.get("schema")
-SCOPE         = dbutils.widgets.get("secret_scope")
-KEY           = dbutils.widgets.get("secret_key")
-ROUTING_MODE  = dbutils.widgets.get("routing_mode")
-ALERT_CHANNEL = dbutils.widgets.get("alert_channel").strip()
-WARN_HOURS    = int(dbutils.widgets.get("warning_suppression_hours"))
-CRIT_HOURS    = int(dbutils.widgets.get("critical_suppression_hours"))
+CATALOG        = dbutils.widgets.get("catalog")
+SCHEMA         = dbutils.widgets.get("schema")
+SCOPE          = dbutils.widgets.get("secret_scope")
+KEY            = dbutils.widgets.get("secret_key")
+ROUTING_MODE   = dbutils.widgets.get("routing_mode")
+ALERT_CHANNEL  = dbutils.widgets.get("alert_channel").strip()
+WARN_HOURS     = int(dbutils.widgets.get("warning_suppression_hours"))
+CRIT_HOURS     = int(dbutils.widgets.get("critical_suppression_hours"))
+HOST_OVERRIDE  = dbutils.widgets.get("workspace_host").strip()
 
 if not ALERT_CHANNEL:
     raise RuntimeError(
@@ -62,17 +65,20 @@ SEND_LOG_TABLE = f"{CATALOG_SCHEMA}.alert_send_log"
 _ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
 WORKSPACE_ID = int(_ctx.workspaceId().get())
 
-# `browserHostName` is what users actually click — important on PrivateLink / front-end-VPC
-# workspaces where the API host and browser host differ. Only populated in interactive
-# notebook context though; in job task context the underlying Scala Option is None and
-# calling `.get()` throws NoSuchElementException via Py4J. Fall back to apiUrl on failure.
+# Resolve the workspace host used to build cluster deep-link URLs in alerts.
+# Priority: explicit `workspace_host` widget > browserHostName (PrivateLink-correct
+# but only populated in interactive context) > apiUrl as last resort.
 from urllib.parse import urlparse
-try:
-    WORKSPACE_HOST = _ctx.browserHostName().get()
-except Exception:
-    WORKSPACE_HOST = None
-if not WORKSPACE_HOST:
-    WORKSPACE_HOST = urlparse(_ctx.apiUrl().get()).netloc
+if HOST_OVERRIDE:
+    # Strip scheme if user pasted a full URL.
+    WORKSPACE_HOST = urlparse(HOST_OVERRIDE).netloc if HOST_OVERRIDE.startswith("http") else HOST_OVERRIDE
+else:
+    try:
+        WORKSPACE_HOST = _ctx.browserHostName().get()
+    except Exception:
+        WORKSPACE_HOST = None
+    if not WORKSPACE_HOST:
+        WORKSPACE_HOST = urlparse(_ctx.apiUrl().get()).netloc
 
 print(
     f"workspace_id={WORKSPACE_ID}, host={WORKSPACE_HOST}, mode={ROUTING_MODE}, "

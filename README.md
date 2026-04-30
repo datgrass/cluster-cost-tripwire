@@ -80,6 +80,7 @@ Under `${catalog}.${schema}` (defaults `main.cluster_early_warning`):
 | `slack_alert_channel` | *(empty — must set)* | Channel name (`#name`) or ID (`C0...`). Required. Bot must be a member unless it has `chat:write.public`. |
 | `warning_suppression_hours` | `24` | Hours to suppress repeat WARNING messages for the same cluster. |
 | `critical_suppression_hours` | `4` | Hours to suppress repeat CRITICAL messages for the same cluster. |
+| `slack_workspace_host` | *(empty — auto-detect)* | Workspace host (e.g. `mycompany.cloud.databricks.com`) used to build cluster deep-link URLs. Leave empty to auto-detect; set explicitly for PrivateLink / custom domains or when auto-detection is wrong. |
 
 Override per deploy, e.g. `databricks bundle deploy -t dev --var="budget_daily_dollars=10000"`.
 
